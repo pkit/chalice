@@ -64,11 +64,13 @@ class UnreferencedResourcePlanner(object):
 
     def execute(self, plan, config):
         # type: (List[models.Instruction], Config) -> None
-        marked = self._mark_resources(plan)
+        marked = set(self._mark_resources(plan))
         deployed = config.deployed_resources(config.chalice_stage)
         if deployed is not None:
-            deployed_resource_names = deployed.resource_names()
-            remaining = list(set(deployed_resource_names) - set(marked))
+            deployed_resource_names = reversed(deployed.resource_names())
+            remaining = [
+                name for name in deployed_resource_names if name not in marked
+            ]
             self._plan_deletion(plan, remaining, deployed)
 
     def _mark_resources(self, plan):
@@ -91,6 +93,18 @@ class UnreferencedResourcePlanner(object):
                 apicall = models.APICall(
                     method_name='delete_function',
                     params={'function_name': resource_values['lambda_arn']},
+                )
+                plan.append(apicall)
+            elif resource_values['resource_type'] == 'iam_role':
+                # TODO: Consider adding the role_name to the deployed.json.
+                # This is a separate value than the 'name' of the resource.
+                # For now we have to parse out the role name from the role_arn
+                # and it would be better if we could get the role name
+                # directly.
+                v = resource_values['role_arn'].rsplit('/')[1]
+                apicall = models.APICall(
+                    method_name='delete_role',
+                    params={'name': v},
                 )
                 plan.append(apicall)
 
@@ -245,6 +259,16 @@ class PlanStage(object):
             document = json.loads(
                 self._osutils.get_file_contents(resource.filename))
         return document
+
+
+class NoopPlanner(PlanStage):
+    def __init__(self):
+        # type: () -> None
+        pass
+
+    def execute(self, resources):
+        # type: (List[models.Model]) -> List[models.Instruction]
+        return []
 
 
 class Variable(object):

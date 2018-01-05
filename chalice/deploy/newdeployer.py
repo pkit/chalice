@@ -95,7 +95,7 @@ from chalice.deploy.packager import LambdaDeploymentPackager
 from chalice.deploy.packager import PipRunner, SubprocessPip
 from chalice.deploy.packager import DependencyBuilder as PipDependencyBuilder
 from chalice.deploy.planner import PlanStage, Variable, RemoteState
-from chalice.deploy.planner import UnreferencedResourcePlanner
+from chalice.deploy.planner import UnreferencedResourcePlanner, NoopPlanner
 from chalice.policy import AppPolicyGenerator
 from chalice.constants import LAMBDA_TRUST_POLICY
 from chalice.constants import DEFAULT_LAMBDA_TIMEOUT
@@ -136,6 +136,18 @@ def create_default_deployer(session):
         plan_stage=PlanStage(
             osutils=osutils, remote_state=RemoteState(client),
         ),
+        sweeper=UnreferencedResourcePlanner(),
+        executor=Executor(client),
+    )
+
+
+def create_deletion_deployer(client):
+    # type: (TypedAWSClient) -> Deployer
+    return Deployer(
+        application_builder=ApplicationGraphBuilder(),
+        deps_builder=DependencyBuilder(),
+        build_stage=BuildStage(steps=[]),
+        plan_stage=NoopPlanner(),
         sweeper=UnreferencedResourcePlanner(),
         executor=Executor(client),
     )
@@ -387,7 +399,7 @@ class Executor(object):
         # are made.  These can be used in subsequent API calls.
         self.variables = {}  # type: Dict[str, Any]
         self.stack = []  # type: List[Any]
-        self.resource_values = {}  # type: Dict[str, Any]
+        self.resource_values = []  # type: List[Dict[str, Any]]
 
     def execute(self, api_calls):
         # type: (List[models.Instruction]) -> None
@@ -409,26 +421,27 @@ class Executor(object):
 
     def _do_recordresource(self, instruction):
         # type: (models.RecordResource) -> None
-        d = self.resource_values.setdefault(
-            instruction.resource_name, {})
-        d['resource_type'] = instruction.resource_type
-        value = self.stack[-1]
-        d[instruction.name] = value
+        self.resource_values.append({
+            'name': instruction.resource_name,
+            'resource_type': instruction.resource_type,
+            instruction.name: self.stack[-1],
+        })
 
     def _do_recordresourcevariable(self, instruction):
         # type: (models.RecordResourceVariable) -> None
-        d = self.resource_values.setdefault(
-            instruction.resource_name, {})
-        d['resource_type'] = instruction.resource_type
-        value = self.variables[instruction.variable_name]
-        d[instruction.name] = value
+        self.resource_values.append({
+            'name': instruction.resource_name,
+            'resource_type': instruction.resource_type,
+            instruction.name: self.variables[instruction.variable_name],
+        })
 
     def _do_recordresourcevalue(self, instruction):
         # type: (models.RecordResourceValue) -> None
-        d = self.resource_values.setdefault(
-            instruction.resource_name, {})
-        d['resource_type'] = instruction.resource_type
-        d[instruction.name] = instruction.value
+        self.resource_values.append({
+            'name': instruction.resource_name,
+            'resource_type': instruction.resource_type,
+            instruction.name: instruction.value,
+        })
 
     def _do_push(self, instruction):
         # type: (models.Push) -> None

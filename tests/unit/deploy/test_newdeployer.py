@@ -14,6 +14,7 @@ from chalice.deploy import packager
 from chalice.config import Config
 from chalice.app import Chalice
 from chalice.deploy.newdeployer import create_default_deployer
+from chalice.deploy.newdeployer import create_deletion_deployer
 from chalice.deploy.newdeployer import Deployer
 from chalice.deploy.newdeployer import BaseDeployStep
 from chalice.deploy.newdeployer import BuildStage
@@ -594,10 +595,11 @@ class TestExecutor(object):
             name='myfunction_arn',
         )
         self.executor.execute([call, record_instruction])
-        assert self.executor.resource_values['myfunction'] == {
+        assert self.executor.resource_values == [{
+            'name': 'myfunction',
             'myfunction_arn': 'function:arn',
             'resource_type': 'lambda_function',
-        }
+        }]
 
     def test_can_reference_varname(self):
         self.mock_client.create_function.return_value = 'function:arn'
@@ -611,12 +613,11 @@ class TestExecutor(object):
                 variable_name='myvarname',
             ),
         ])
-        assert self.executor.resource_values == {
-            'myfunction': {
-                'resource_type': 'lambda_function',
-                'myfunction_arn': 'function:arn',
-            }
-        }
+        assert self.executor.resource_values == [{
+            'name': 'myfunction',
+            'resource_type': 'lambda_function',
+            'myfunction_arn': 'function:arn',
+        }]
 
     def test_can_record_value_directly(self):
         self.executor.execute([
@@ -627,12 +628,11 @@ class TestExecutor(object):
                 value='arn:foo',
             )
         ])
-        assert self.executor.resource_values == {
-            'myfunction': {
-                'resource_type': 'lambda_function',
-                'myfunction_arn': 'arn:foo',
-            }
-        }
+        assert self.executor.resource_values == [{
+            'name': 'myfunction',
+            'resource_type': 'lambda_function',
+            'myfunction_arn': 'arn:foo',
+        }]
 
     def test_validates_no_unresolved_deploy_vars(self):
         function = create_function_resource('myfunction')
@@ -742,4 +742,10 @@ class TestDeployer(unittest.TestCase):
 def test_can_create_default_deployer():
     session = botocore.session.get_session()
     deployer = create_default_deployer(session)
+    assert isinstance(deployer, Deployer)
+
+
+def test_can_create_deletion_deployer():
+    session = botocore.session.get_session()
+    deployer = create_deletion_deployer(TypedAWSClient(session))
     assert isinstance(deployer, Deployer)
