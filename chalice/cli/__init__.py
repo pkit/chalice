@@ -418,7 +418,7 @@ def kms_decrypt(client, config):
 def decrypt_vars(client, val):
     # type: (TypedAWSClient, dict) -> bool
     env_vars = val.get('environment_variables')
-    if env_vars and isinstance(env_vars, str):
+    if env_vars and (isinstance(env_vars, str) or isinstance(env_vars, unicode)):
         val['environment_variables'] = client.decrypt_data(env_vars)
         click.echo(serialize_to_json(val['environment_variables']))
         return True
